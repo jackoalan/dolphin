@@ -290,15 +290,15 @@ bool SwapChain::CreateSwapChain()
   // Determine the dimensions of the swap chain. Values of -1 indicate the size we specify here
   // determines window size?
   VkExtent2D size = surface_capabilities.currentExtent;
-  if (size.width == UINT32_MAX && g_renderer != nullptr)
-  {
-    size.width = std::max(g_renderer->GetBackbufferWidth(), 1);
-    size.height = std::max(g_renderer->GetBackbufferHeight(), 1);
-  }
-  else if (size.width == UINT32_MAX)
+  if (size.width == UINT32_MAX && m_wsi.type == WindowSystemType::Wayland)
   {
     size.width = m_wsi.width;
     size.height = m_wsi.height;
+  }
+  else if (size.width == UINT32_MAX)
+  {
+    size.width = std::max(g_renderer->GetBackbufferWidth(), 1);
+    size.height = std::max(g_renderer->GetBackbufferHeight(), 1);
   }
   size.width = std::clamp(size.width, surface_capabilities.minImageExtent.width,
                           surface_capabilities.maxImageExtent.width);
