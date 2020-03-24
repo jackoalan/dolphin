@@ -112,10 +112,6 @@ VkSurfaceKHR SwapChain::CreateVulkanSurface(VkInstance instance, const WindowSys
   }
 #endif
 
-#ifndef VK_USE_PLATFORM_WAYLAND_KHR
-#error wat
-#endif
-
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
   if (wsi.type == WindowSystemType::Android)
   {
@@ -294,10 +290,15 @@ bool SwapChain::CreateSwapChain()
   // Determine the dimensions of the swap chain. Values of -1 indicate the size we specify here
   // determines window size?
   VkExtent2D size = surface_capabilities.currentExtent;
-  if (size.width == UINT32_MAX)
+  if (size.width == UINT32_MAX && g_renderer != nullptr)
   {
     size.width = std::max(g_renderer->GetBackbufferWidth(), 1);
     size.height = std::max(g_renderer->GetBackbufferHeight(), 1);
+  }
+  else if (size.width == UINT32_MAX)
+  {
+    size.width = m_wsi.width;
+    size.height = m_wsi.height;
   }
   size.width = std::clamp(size.width, surface_capabilities.minImageExtent.width,
                           surface_capabilities.maxImageExtent.width);
