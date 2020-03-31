@@ -93,11 +93,11 @@ VkSurfaceKHR SwapChain::CreateVulkanSurface(VkInstance instance, const WindowSys
   if (wsi.type == WindowSystemType::Wayland)
   {
     VkWaylandSurfaceCreateInfoKHR surface_create_info = {
-        VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR, // VkStructureType                sType
-        nullptr,                                           // const void*                    pNext
-        0,                                                 // VkWaylandSurfaceCreateFlagsKHR flags
-        static_cast<struct wl_display*>(wsi.display_connection), // struct wl_display*       display
-        static_cast<struct wl_surface*>(wsi.render_surface) // struct wl_surface*            surface
+        VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,  // VkStructureType                sType
+        nullptr,                                            // const void*                    pNext
+        0,                                                  // VkWaylandSurfaceCreateFlagsKHR flags
+        static_cast<struct wl_display*>(wsi.display_connection),  // struct wl_display* display
+        static_cast<struct wl_surface*>(wsi.render_surface)       // struct wl_surface* surface
     };
 
     VkSurfaceKHR surface;

@@ -24,8 +24,7 @@ EGLDisplay GLContextEGLWayland::OpenEGLDisplay()
 
 EGLNativeWindowType GLContextEGLWayland::GetEGLNativeWindow(EGLConfig config)
 {
-  struct wl_egl_window *egl_window = wl_egl_window_create(
-                                            static_cast<struct wl_surface *>(m_wsi.render_surface),
-                                            m_wsi.width, m_wsi.height);
+  struct wl_egl_window* egl_window = wl_egl_window_create(
+      static_cast<struct wl_surface*>(m_wsi.render_surface), m_wsi.width, m_wsi.height);
   return static_cast<NativeWindowType>(egl_window);
 }
