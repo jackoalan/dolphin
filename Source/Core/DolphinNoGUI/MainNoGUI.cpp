@@ -119,6 +119,11 @@ static std::unique_ptr<Platform> GetPlatform(const optparse::Values& options)
     return Platform::CreateX11Platform();
 #endif
 
+#if HAVE_WAYLAND
+  if (platform_name == "wayland" || platform_name.empty())
+    return Platform::CreateWaylandPlatform();
+#endif
+
 #ifdef __linux__
   if (platform_name == "fbdev" || platform_name.empty())
     return Platform::CreateFBDevPlatform();
@@ -150,6 +155,10 @@ int main(int argc, char* argv[])
 #if HAVE_X11
             ,
             "x11"
+#endif
+#if HAVE_WAYLAND
+            ,
+            "wayland"
 #endif
 #ifdef _WIN32
             ,

@@ -9,6 +9,14 @@ if(ENABLE_X11 AND X11_FOUND)
   target_sources(dolphin-nogui PRIVATE PlatformX11.cpp)
 endif()
 
+if(ENABLE_WAYLAND AND WAYLAND_FOUND)
+	target_sources(dolphin-nogui PRIVATE
+		PlatformWayland.cpp
+		xdg-shell.cpp
+		xdg-shell-client-protocol.h
+	)
+endif()
+
 if(WIN32)
   target_sources(dolphin-nogui PRIVATE PlatformWin32.cpp)
 endif()
