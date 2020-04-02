@@ -11,9 +11,9 @@ endif()
 
 if(ENABLE_WAYLAND AND WAYLAND_FOUND)
 	target_sources(dolphin-nogui PRIVATE
-		PlatformWayland.cpp
 		xdg-shell.cpp
 		xdg-shell-client-protocol.h
+		PlatformWayland.cpp
 	)
 endif()
 
