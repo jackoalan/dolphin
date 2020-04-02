@@ -58,7 +58,6 @@ private:
   struct wl_registry* m_registry;
   struct wl_compositor* m_compositor;
   struct wl_surface* m_surface;
-  struct wl_shm* m_shm;
 
   struct xdg_surface* m_xdg_surface;
   struct xdg_wm_base* m_xdg_wm_base;
@@ -72,6 +71,8 @@ private:
   int32_t m_window_y = Config::Get(Config::MAIN_RENDER_WINDOW_YPOS);
   int32_t m_window_width = Config::Get(Config::MAIN_RENDER_WINDOW_WIDTH);
   int32_t m_window_height = Config::Get(Config::MAIN_RENDER_WINDOW_HEIGHT);
+
+  bool m_window_closed = false;
 };
 
 PlatformWayland::~PlatformWayland()
@@ -86,8 +87,6 @@ PlatformWayland::~PlatformWayland()
     wl_pointer_destroy(m_pointer);
   if (m_seat)
     wl_seat_destroy(m_seat);
-  if (m_shm)
-    wl_shm_destroy(m_shm);
   if (m_surface)
     wl_surface_destroy(m_surface);
   if (m_xdg_wm_base)
@@ -127,11 +126,6 @@ bool PlatformWayland::Init()
     PanicAlert("Could not get Wayland surface");
     return false;
   }
-  if (!m_shm)
-  {
-    PanicAlert("Could not get Wayland shm object");
-    return false;
-  }
   if (!m_xdg_wm_base)
   {
     PanicAlert("Could not get xdg-shell xdg_wm_base object");
@@ -154,13 +148,10 @@ bool PlatformWayland::Init()
   }
   xdg_toplevel_add_listener(m_xdg_toplevel, &m_xdg_toplevel_listener, this);
 
-  printf("Setting geometry to x=%d,y=%d,width=%d,height=%d\n", m_window_x, m_window_y,
-         m_window_width, m_window_height);
-  xdg_surface_set_window_geometry(m_xdg_surface, m_window_x, m_window_y, m_window_width,
-                                  m_window_height);
-
-  xdg_toplevel_set_title("Dolphin Emulator");
+  xdg_toplevel_set_title(m_xdg_toplevel, "Dolphin Emulator");
   wl_surface_commit(m_surface);
+
+  wl_display_roundtrip(m_display);
 
   return true;
 }
@@ -172,11 +163,15 @@ void PlatformWayland::SetTitle(const std::string& string)
 
 void PlatformWayland::MainLoop()
 {
-  Core::HostDispatchJobs();
-  if (wl_display_dispatch(m_display) < 0)
+  printf("Starting main loop\n");
+  while (IsRunning())
   {
-    PanicAlert("Could not process Wayland events");
-    return;
+    Core::HostDispatchJobs();
+    if (wl_display_dispatch(m_display) < 0)
+    {
+      PanicAlert("Could not process Wayland events");
+      return;
+    }
   }
 }
 
@@ -202,11 +197,6 @@ void PlatformWayland::registry_handle_global_add(void* data, struct wl_registry*
     platform->m_compositor = static_cast<struct wl_compositor*>(
         wl_registry_bind(registry, id, &wl_compositor_interface, 4));
     platform->m_surface = wl_compositor_create_surface(platform->m_compositor);
-  }
-  else if (strcmp(interface, wl_shm_interface.name) == 0)
-  {
-    platform->m_shm =
-        static_cast<struct wl_shm*>(wl_registry_bind(registry, id, &wl_shm_interface, 1));
   }
   else if (strcmp(interface, xdg_wm_base_interface.name) == 0)
   {
@@ -234,17 +224,26 @@ void PlatformWayland::xdg_toplevel_handle_configure(void* data, struct xdg_tople
                                                     struct wl_array* states)
 {
   PlatformWayland* platform = static_cast<PlatformWayland*>(data);
-
-  xdg_surface_set_window_geometry(platform->m_xdg_surface, platform->m_window_x,
-                                  platform->m_window_y, platform->m_window_width,
-                                  platform->m_window_height);
-  printf("Received xdg_toplevel configure event, width=%d, height=%d\n", width, height);
+  if (width != 0 && height != 0)
+  {
+    platform->m_window_width = width;
+    platform->m_window_height = height;
+    if (g_renderer)
+      g_renderer->ResizeSurface(width, height);
+  }
+  else
+  {
+    xdg_surface_set_window_geometry(platform->m_xdg_surface, platform->m_window_x,
+                                     platform->m_window_y, platform->m_window_width,
+                                     platform->m_window_height);
+    wl_surface_commit(platform->m_surface);
+  }
 }
 
 void PlatformWayland::xdg_toplevel_handle_close(void* data, struct xdg_toplevel* xdg_toplevel)
 {
   PlatformWayland* platform = static_cast<PlatformWayland*>(data);
-  printf("Window closed\n");
+  platform->Stop();
 }
 
 void PlatformWayland::xdg_surface_handle_configure(void* data, struct xdg_surface* xdg_surface,
