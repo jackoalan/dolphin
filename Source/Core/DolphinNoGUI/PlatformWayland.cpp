@@ -35,18 +35,45 @@ public:
   WindowSystemInfo GetWindowSystemInfo() const override;
 
 private:
-  static void registry_handle_global_add(void* self, struct wl_registry* registry, uint32_t id,
-                                         const char* interface, uint32_t version);
-  static void registry_handle_global_remove(void* self, struct wl_registry* registry, uint32_t id);
+  bool Connect();
+
+  static void wl_registry_handle_global_add(void* data, struct wl_registry* registry, uint32_t id,
+                                            const char* interface, uint32_t version);
+  static void wl_registry_handle_global_remove(void* data, struct wl_registry* registry,
+                                               uint32_t id);
+
+  static void wl_surface_handle_enter(void* data, struct wl_surface* surface,
+                                      struct wl_output* output);
+  static void wl_surface_handle_leave(void* data, struct wl_surface* surface,
+                                      struct wl_output* output);
+
+  static void wl_output_handle_geometry(void* data, struct wl_output* output, int32_t x, int32_t y,
+                                        int32_t physical_width, int32_t physical_height,
+                                        int32_t subpixel, const char* make, const char* model,
+                                        int32_t transform);
+  static void wl_output_handle_mode(void* data, struct wl_output* output, uint32_t flags,
+                                    int32_t width, int32_t height, int32_t refresh);
+  static void wl_output_handle_done(void* data, struct wl_output* output);
+  static void wl_output_handle_scale(void* data, struct wl_output* output, int32_t factor);
+
   static void xdg_wm_base_handle_ping(void* data, struct xdg_wm_base* xdg_wm_base, uint32_t serial);
+
   static void xdg_toplevel_handle_configure(void* data, struct xdg_toplevel* xdg_toplevel,
                                             int32_t width, int32_t height, struct wl_array* states);
   static void xdg_toplevel_handle_close(void* data, struct xdg_toplevel* xdg_toplevel);
+
   static void xdg_surface_handle_configure(void* data, struct xdg_surface* xdg_surface,
                                            uint32_t serial);
 
-  static constexpr struct wl_registry_listener m_registry_listener = {
-      .global = registry_handle_global_add, .global_remove = registry_handle_global_remove};
+  static constexpr struct wl_registry_listener m_wl_registry_listener = {
+      .global = wl_registry_handle_global_add, .global_remove = wl_registry_handle_global_remove};
+  static constexpr struct wl_surface_listener m_wl_surface_listener = {
+      .enter = wl_surface_handle_enter, .leave = wl_surface_handle_leave};
+  static constexpr struct wl_output_listener m_wl_output_listener = {
+      .geometry = wl_output_handle_geometry,
+      .mode = wl_output_handle_mode,
+      .done = wl_output_handle_done,
+      .scale = wl_output_handle_scale};
   static constexpr struct xdg_wm_base_listener m_xdg_wm_base_listener = {
       .ping = xdg_wm_base_handle_ping};
   static constexpr struct xdg_toplevel_listener m_xdg_toplevel_listener = {
@@ -71,8 +98,7 @@ private:
   int32_t m_window_y = Config::Get(Config::MAIN_RENDER_WINDOW_YPOS);
   int32_t m_window_width = Config::Get(Config::MAIN_RENDER_WINDOW_WIDTH);
   int32_t m_window_height = Config::Get(Config::MAIN_RENDER_WINDOW_HEIGHT);
-
-  bool m_window_closed = false;
+  int32_t m_scaling_factor = 1;
 };
 
 PlatformWayland::~PlatformWayland()
@@ -99,60 +125,44 @@ PlatformWayland::~PlatformWayland()
 
 bool PlatformWayland::Init()
 {
-  m_display = wl_display_connect(NULL);
-  if (!m_display)
+  if (!Connect())
   {
-    PanicAlert("Could not connect to Wayland display");
+    PanicAlert("Could not connect to Wayland session");
     return false;
   }
+
+  xdg_toplevel_set_title(m_xdg_toplevel, "Dolphin Emulator");
+  wl_surface_commit(m_surface);
+  wl_display_roundtrip(m_display);
+
+  return true;
+}
+
+bool PlatformWayland::Connect()
+{
+  m_display = wl_display_connect(NULL);
+  if (!m_display)
+    return false;
 
   m_registry = wl_display_get_registry(m_display);
   if (!m_registry)
-  {
-    PanicAlert("Could not get Wayland registry");
     return false;
-  }
 
-  wl_registry_add_listener(m_registry, &m_registry_listener, this);
+  wl_registry_add_listener(m_registry, &m_wl_registry_listener, this);
   wl_display_roundtrip(m_display);  // Wait for roundtrip so registry listener is registered
 
-  if (!m_compositor)
-  {
-    PanicAlert("Could not get Wayland compositor");
+  if (!m_compositor || !m_surface || !m_xdg_wm_base)
     return false;
-  }
-  if (!m_surface)
-  {
-    PanicAlert("Could not get Wayland surface");
-    return false;
-  }
-  if (!m_xdg_wm_base)
-  {
-    PanicAlert("Could not get xdg-shell xdg_wm_base object");
-    return false;
-  }
 
   m_xdg_surface = xdg_wm_base_get_xdg_surface(m_xdg_wm_base, m_surface);
   if (!m_xdg_surface)
-  {
-    PanicAlert("Could not get xdg-shell xdg_surface");
     return false;
-  }
   xdg_surface_add_listener(m_xdg_surface, &m_xdg_surface_listener, this);
 
   m_xdg_toplevel = xdg_surface_get_toplevel(m_xdg_surface);
   if (!m_xdg_toplevel)
-  {
-    PanicAlert("Could not get xdg-shell top-level object");
     return false;
-  }
   xdg_toplevel_add_listener(m_xdg_toplevel, &m_xdg_toplevel_listener, this);
-
-  xdg_toplevel_set_title(m_xdg_toplevel, "Dolphin Emulator");
-  wl_surface_commit(m_surface);
-
-  wl_display_roundtrip(m_display);
-
   return true;
 }
 
@@ -187,9 +197,9 @@ WindowSystemInfo PlatformWayland::GetWindowSystemInfo() const
   return wsi;
 }
 
-void PlatformWayland::registry_handle_global_add(void* data, struct wl_registry* registry,
-                                                 uint32_t id, const char* interface,
-                                                 uint32_t version)
+void PlatformWayland::wl_registry_handle_global_add(void* data, struct wl_registry* registry,
+                                                    uint32_t id, const char* interface,
+                                                    uint32_t version)
 {
   PlatformWayland* platform = static_cast<PlatformWayland*>(data);
   if (strcmp(interface, wl_compositor_interface.name) == 0)
@@ -197,6 +207,7 @@ void PlatformWayland::registry_handle_global_add(void* data, struct wl_registry*
     platform->m_compositor = static_cast<struct wl_compositor*>(
         wl_registry_bind(registry, id, &wl_compositor_interface, 4));
     platform->m_surface = wl_compositor_create_surface(platform->m_compositor);
+    wl_surface_add_listener(platform->m_surface, &PlatformWayland::m_wl_surface_listener, data);
   }
   else if (strcmp(interface, xdg_wm_base_interface.name) == 0)
   {
@@ -207,10 +218,51 @@ void PlatformWayland::registry_handle_global_add(void* data, struct wl_registry*
   }
 }
 
-void PlatformWayland::registry_handle_global_remove(void* data, struct wl_registry* registry,
-                                                    uint32_t id)
+void PlatformWayland::wl_registry_handle_global_remove(void* data, struct wl_registry* registry,
+                                                       uint32_t id)
 {
   printf("Deleted registry item with id %d\n", id);
+}
+
+void PlatformWayland::wl_surface_handle_enter(void* data, struct wl_surface* surface,
+                                              struct wl_output* output)
+{
+  wl_output_add_listener(output, &PlatformWayland::m_wl_output_listener, data);
+  printf("Moved into output");
+}
+
+void PlatformWayland::wl_surface_handle_leave(void* data, struct wl_surface* surface,
+                                              struct wl_output* output)
+
+{
+}
+
+void PlatformWayland::wl_output_handle_geometry(void* data, struct wl_output* output, int32_t x,
+                                                int32_t y, int32_t physical_width,
+                                                int32_t physical_height, int32_t subpixel,
+                                                const char* make, const char* model,
+                                                int32_t transform)
+{
+}
+
+void PlatformWayland::wl_output_handle_mode(void* data, struct wl_output* output, uint32_t flags,
+                                            int32_t width, int32_t height, int32_t refresh)
+{
+}
+
+void PlatformWayland::wl_output_handle_done(void* data, struct wl_output* output)
+{
+  PlatformWayland* platform = static_cast<PlatformWayland*>(data);
+  printf("New display has scale %d\n", platform->m_scaling_factor);
+  wl_surface_set_buffer_scale(platform->m_surface, platform->m_scaling_factor);
+  wl_surface_commit(platform->m_surface);
+  wl_output_release(output);
+}
+
+void PlatformWayland::wl_output_handle_scale(void* data, struct wl_output* output, int32_t factor)
+{
+  PlatformWayland* platform = static_cast<PlatformWayland*>(data);
+  platform->m_scaling_factor = factor;
 }
 
 void PlatformWayland::xdg_wm_base_handle_ping(void* data, struct xdg_wm_base* xdg_wm_base,
@@ -234,8 +286,8 @@ void PlatformWayland::xdg_toplevel_handle_configure(void* data, struct xdg_tople
   else
   {
     xdg_surface_set_window_geometry(platform->m_xdg_surface, platform->m_window_x,
-                                     platform->m_window_y, platform->m_window_width,
-                                     platform->m_window_height);
+                                    platform->m_window_y, platform->m_window_width,
+                                    platform->m_window_height);
     wl_surface_commit(platform->m_surface);
   }
 }
@@ -249,8 +301,6 @@ void PlatformWayland::xdg_toplevel_handle_close(void* data, struct xdg_toplevel*
 void PlatformWayland::xdg_surface_handle_configure(void* data, struct xdg_surface* xdg_surface,
                                                    uint32_t serial)
 {
-  PlatformWayland* platform = static_cast<PlatformWayland*>(data);
-  printf("Received xdg_surface configure event\n");
   xdg_surface_ack_configure(xdg_surface, serial);
 }
 
