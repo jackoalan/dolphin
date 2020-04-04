@@ -1112,8 +1112,18 @@ void Renderer::CheckForSurfaceResize()
     return;
 
   m_main_gl_context->Update();
-  m_backbuffer_width = m_main_gl_context->GetBackBufferWidth();
-  m_backbuffer_height = m_main_gl_context->GetBackBufferHeight();
+  if (m_backbuffer_width == -1 && m_backbuffer_height == -1 && m_new_width != -1 &&
+      m_new_height != -1)
+  {
+    // We're on a system where we need to get the size from the toolkit
+    m_backbuffer_width = m_new_width;
+    m_backbuffer_height = m_new_height;
+  }
+  else
+  {
+    m_backbuffer_width = m_main_gl_context->GetBackBufferWidth();
+    m_backbuffer_height = m_main_gl_context->GetBackBufferHeight();
+  }
   m_system_framebuffer->UpdateDimensions(m_backbuffer_width, m_backbuffer_height);
 }
 

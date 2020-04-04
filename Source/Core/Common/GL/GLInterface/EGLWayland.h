@@ -4,9 +4,8 @@
 
 #pragma once
 
-// Use Wayland for EGL native types
-#define WL_EGL_PLATFORM
-
+// wayland-egl must be before egl to set correct defines
+#include <wayland-egl.h>
 #include "Common/GL/GLInterface/EGL.h"
 
 class GLContextEGLWayland final : public GLContextEGL
@@ -18,4 +17,7 @@ public:
 protected:
   EGLDisplay OpenEGLDisplay() override;
   EGLNativeWindowType GetEGLNativeWindow(EGLConfig config) override;
+
+private:
+  struct wl_egl_window* m_egl_window;
 };

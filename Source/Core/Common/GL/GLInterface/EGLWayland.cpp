@@ -3,18 +3,19 @@
 // Refer to the license.txt file included.
 
 #include "Common/GL/GLInterface/EGLWayland.h"
-#include <wayland-client.h>
-#include <wayland-egl.h>
+#include <cstdio>
 
 GLContextEGLWayland::~GLContextEGLWayland()
 {
-  // The context must be destroyed before the window.
   DestroyWindowSurface();
+  wl_egl_window_destroy(m_egl_window);
   DestroyContext();
 }
 
 void GLContextEGLWayland::Update()
 {
+  m_backbuffer_width = -1;
+  m_backbuffer_height = -1;
 }
 
 EGLDisplay GLContextEGLWayland::OpenEGLDisplay()
@@ -24,7 +25,7 @@ EGLDisplay GLContextEGLWayland::OpenEGLDisplay()
 
 EGLNativeWindowType GLContextEGLWayland::GetEGLNativeWindow(EGLConfig config)
 {
-  struct wl_egl_window* egl_window = wl_egl_window_create(
-      static_cast<struct wl_surface*>(m_wsi.render_surface), m_wsi.width, m_wsi.height);
-  return static_cast<NativeWindowType>(egl_window);
+  m_egl_window = wl_egl_window_create(static_cast<struct wl_surface*>(m_wsi.render_surface),
+                                      m_wsi.width, m_wsi.height);
+  return static_cast<NativeWindowType>(m_egl_window);
 }
