@@ -85,6 +85,7 @@ private:
   struct wl_registry* m_registry;
   struct wl_compositor* m_compositor;
   struct wl_surface* m_surface;
+  struct wl_output* m_output;
 
   struct xdg_surface* m_xdg_surface;
   struct xdg_wm_base* m_xdg_wm_base;
@@ -208,6 +209,7 @@ void PlatformWayland::wl_registry_handle_global_add(void* data, struct wl_regist
         wl_registry_bind(registry, id, &wl_compositor_interface, 4));
     platform->m_surface = wl_compositor_create_surface(platform->m_compositor);
     wl_surface_add_listener(platform->m_surface, &PlatformWayland::m_wl_surface_listener, data);
+    wl_display_roundtrip(platform->m_display);
   }
   else if (strcmp(interface, xdg_wm_base_interface.name) == 0)
   {
@@ -227,6 +229,9 @@ void PlatformWayland::wl_registry_handle_global_remove(void* data, struct wl_reg
 void PlatformWayland::wl_surface_handle_enter(void* data, struct wl_surface* surface,
                                               struct wl_output* output)
 {
+  PlatformWayland* platform = static_cast<PlatformWayland*>(data);
+  if(platform->m_output) wl_output_release(platform->m_output);
+  platform->m_output = output;
   wl_output_add_listener(output, &PlatformWayland::m_wl_output_listener, data);
   printf("Moved into output");
 }
@@ -256,7 +261,6 @@ void PlatformWayland::wl_output_handle_done(void* data, struct wl_output* output
   printf("New display has scale %d\n", platform->m_scaling_factor);
   wl_surface_set_buffer_scale(platform->m_surface, platform->m_scaling_factor);
   wl_surface_commit(platform->m_surface);
-  wl_output_release(output);
 }
 
 void PlatformWayland::wl_output_handle_scale(void* data, struct wl_output* output, int32_t factor)
@@ -275,13 +279,14 @@ void PlatformWayland::xdg_toplevel_handle_configure(void* data, struct xdg_tople
                                                     int32_t width, int32_t height,
                                                     struct wl_array* states)
 {
+  printf("Got toplevel configure event, width=%d, height=%d\n", width, height);
   PlatformWayland* platform = static_cast<PlatformWayland*>(data);
   if (width != 0 && height != 0)
   {
-    platform->m_window_width = width;
-    platform->m_window_height = height;
+    platform->m_window_width = width * platform->m_scaling_factor;
+    platform->m_window_height = height * platform->m_scaling_factor;
     if (g_renderer)
-      g_renderer->ResizeSurface(width, height);
+      g_renderer->ResizeSurface(platform->m_window_width, platform->m_window_height);
   }
   else
   {
