@@ -2,6 +2,7 @@
 // Licensed under GPLv2+
 // Refer to the license.txt file included.
 
+#include <sys/mman.h>
 #include <unistd.h>
 
 #include "DolphinNoGUI/Platform.h"
@@ -17,7 +18,9 @@
 #include <cstdio>
 #include <cstring>
 
+#include <wayland-client-protocol.h>
 #include <wayland-client.h>
+#include <xkbcommon/xkbcommon.h>
 
 #include "VideoCommon/RenderBase.h"
 
@@ -64,6 +67,23 @@ private:
 
   static void xdg_surface_handle_configure(void* data, struct xdg_surface* xdg_surface,
                                            uint32_t serial);
+  static void wl_seat_handle_capabilities(void* data, struct wl_seat* wl_seat,
+                                          uint32_t capabilities);
+  static void wl_seat_handle_name(void* data, struct wl_seat* wl_seat, const char* name);
+  static void wl_keyboard_handle_keymap(void* data, struct wl_keyboard* wl_keyboard,
+                                        uint32_t format, int32_t fd, uint32_t size);
+  static void wl_keyboard_handle_enter(void* data, struct wl_keyboard* wl_keyboard, uint32_t serial,
+                                       struct wl_surface* surface, struct wl_array* keys);
+  static void wl_keyboard_handle_leave(void* data, struct wl_keyboard* wl_keyboard, uint32_t serial,
+                                       struct wl_surface* surface);
+  static void wl_keyboard_handle_key(void* data, struct wl_keyboard* wl_keyboard, uint32_t serial,
+                                     uint32_t time, uint32_t key, uint32_t state);
+  static void wl_keyboard_handle_modifiers(void* data, struct wl_keyboard* wl_keyboard,
+                                           uint32_t serial, uint32_t mods_pressed,
+                                           uint32_t mods_latched, uint32_t mods_locked,
+                                           uint32_t group);
+  static void wl_keyboard_handle_repeat_info(void* data, struct wl_keyboard* wl_keyboard,
+                                             int32_t rate, int32_t delay);
 
   static constexpr struct wl_registry_listener m_wl_registry_listener = {
       .global = wl_registry_handle_global_add, .global_remove = wl_registry_handle_global_remove};
@@ -80,20 +100,33 @@ private:
       .configure = xdg_toplevel_handle_configure, .close = xdg_toplevel_handle_close};
   static constexpr struct xdg_surface_listener m_xdg_surface_listener = {
       .configure = xdg_surface_handle_configure};
+  static constexpr struct wl_seat_listener m_wl_seat_listener = {
+      .capabilities = wl_seat_handle_capabilities, .name = wl_seat_handle_name};
+  static constexpr struct wl_keyboard_listener m_wl_keyboard_listener = {
+      .keymap = wl_keyboard_handle_keymap,
+      .enter = wl_keyboard_handle_enter,
+      .leave = wl_keyboard_handle_leave,
+      .key = wl_keyboard_handle_key,
+      .modifiers = wl_keyboard_handle_modifiers,
+      .repeat_info = wl_keyboard_handle_repeat_info};
 
-  struct wl_display* m_display;
-  struct wl_registry* m_registry;
-  struct wl_compositor* m_compositor;
-  struct wl_surface* m_surface;
-  struct wl_output* m_output;
+  struct wl_display* m_display = nullptr;
+  struct wl_registry* m_registry = nullptr;
+  struct wl_compositor* m_compositor = nullptr;
+  struct wl_surface* m_surface = nullptr;
+  struct wl_output* m_output = nullptr;
 
-  struct xdg_surface* m_xdg_surface;
-  struct xdg_wm_base* m_xdg_wm_base;
-  struct xdg_toplevel* m_xdg_toplevel;
+  struct xdg_surface* m_xdg_surface = nullptr;
+  struct xdg_wm_base* m_xdg_wm_base = nullptr;
+  struct xdg_toplevel* m_xdg_toplevel = nullptr;
 
-  struct wl_keyboard* m_keyboard;
-  struct wl_seat* m_seat;
-  struct wl_pointer* m_pointer;
+  struct wl_seat* m_seat = nullptr;
+  struct wl_keyboard* m_keyboard = nullptr;
+  struct wl_pointer* m_pointer = nullptr;
+
+  struct xkb_context* m_xkb_ctx = nullptr;
+  struct xkb_keymap* m_xkb_map = nullptr;
+  struct xkb_state* m_xkb_state = nullptr;
 
   int32_t m_window_x = Config::Get(Config::MAIN_RENDER_WINDOW_XPOS);
   int32_t m_window_y = Config::Get(Config::MAIN_RENDER_WINDOW_YPOS);
@@ -164,6 +197,9 @@ bool PlatformWayland::Connect()
   if (!m_xdg_toplevel)
     return false;
   xdg_toplevel_add_listener(m_xdg_toplevel, &m_xdg_toplevel_listener, this);
+
+  m_xkb_ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+
   return true;
 }
 
@@ -218,6 +254,12 @@ void PlatformWayland::wl_registry_handle_global_add(void* data, struct wl_regist
     xdg_wm_base_add_listener(platform->m_xdg_wm_base, &PlatformWayland::m_xdg_wm_base_listener,
                              data);
   }
+  else if (strcmp(interface, wl_seat_interface.name) == 0)
+  {
+    platform->m_seat =
+        static_cast<struct wl_seat*>(wl_registry_bind(registry, id, &wl_seat_interface, 5));
+    wl_seat_add_listener(platform->m_seat, &PlatformWayland::m_wl_seat_listener, data);
+  }
 }
 
 void PlatformWayland::wl_registry_handle_global_remove(void* data, struct wl_registry* registry,
@@ -230,7 +272,8 @@ void PlatformWayland::wl_surface_handle_enter(void* data, struct wl_surface* sur
                                               struct wl_output* output)
 {
   PlatformWayland* platform = static_cast<PlatformWayland*>(data);
-  if(platform->m_output) wl_output_release(platform->m_output);
+  if (platform->m_output)
+    wl_output_release(platform->m_output);
   platform->m_output = output;
   wl_output_add_listener(output, &PlatformWayland::m_wl_output_listener, data);
   printf("Moved into output");
@@ -307,6 +350,72 @@ void PlatformWayland::xdg_surface_handle_configure(void* data, struct xdg_surfac
                                                    uint32_t serial)
 {
   xdg_surface_ack_configure(xdg_surface, serial);
+}
+
+void PlatformWayland::wl_seat_handle_capabilities(void* data, struct wl_seat* wl_seat,
+                                                  uint32_t capabilities)
+{
+  PlatformWayland* platform = static_cast<PlatformWayland*>(data);
+  if (capabilities & WL_SEAT_CAPABILITY_POINTER)
+  {
+    platform->m_pointer = wl_seat_get_pointer(wl_seat);
+  }
+  if (capabilities & WL_SEAT_CAPABILITY_KEYBOARD)
+  {
+    platform->m_keyboard = wl_seat_get_keyboard(wl_seat);
+    wl_keyboard_add_listener(platform->m_keyboard, &m_wl_keyboard_listener, data);
+  }
+}
+void PlatformWayland::wl_seat_handle_name(void* data, struct wl_seat* wl_seat, const char* name)
+{
+}
+
+void PlatformWayland::wl_keyboard_handle_keymap(void* data, struct wl_keyboard* wl_keyboard,
+                                                uint32_t format, int32_t fd, uint32_t size)
+{
+  PlatformWayland* platform = static_cast<PlatformWayland*>(data);
+  if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1)
+  {
+    printf("No keymap availaible, cannot use keyboard\n");
+    wl_keyboard_release(wl_keyboard);
+    return;
+  }
+
+  xkb_keymap_unref(platform->m_xkb_map);
+  xkb_state_unref(platform->m_xkb_state);
+
+  char* raw_keymap = static_cast<char*>(mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0));
+  platform->m_xkb_map = xkb_keymap_new_from_string(
+      platform->m_xkb_ctx, raw_keymap, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
+
+  munmap(raw_keymap, size);
+  close(fd);
+
+  platform->m_xkb_state = xkb_state_new(platform->m_xkb_map);
+}
+void PlatformWayland::wl_keyboard_handle_enter(void* data, struct wl_keyboard* wl_keyboard,
+                                               uint32_t serial, struct wl_surface* surface,
+                                               struct wl_array* keys)
+{
+}
+void PlatformWayland::wl_keyboard_handle_leave(void* data, struct wl_keyboard* wl_keyboard,
+                                               uint32_t serial, struct wl_surface* surface)
+{
+}
+void PlatformWayland::wl_keyboard_handle_key(void* data, struct wl_keyboard* wl_keyboard,
+                                             uint32_t serial, uint32_t time, uint32_t key,
+                                             uint32_t state)
+{
+}
+void PlatformWayland::wl_keyboard_handle_modifiers(void* data, struct wl_keyboard* wl_keyboard,
+                                                   uint32_t serial, uint32_t mods_pressed,
+                                                   uint32_t mods_latched, uint32_t mods_locked,
+                                                   uint32_t group)
+{
+}
+void PlatformWayland::wl_keyboard_handle_repeat_info(void* data, struct wl_keyboard* wl_keyboard,
+                                                     int32_t rate, int32_t delay)
+{
 }
 
 }  // namespace
