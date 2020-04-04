@@ -394,7 +394,7 @@ void Renderer::CheckForSurfaceChange()
 
 void Renderer::CheckForSurfaceResize()
 {
-  if (!m_surface_resized.TestAndClear())
+  if (!m_surface_resized.Fetch(m_wayland_width, m_wayland_height))
     return;
 
   // If we don't have a surface, how can we resize the swap chain?

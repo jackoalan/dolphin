@@ -147,4 +147,33 @@ SWRenderer::CreateNativeVertexFormat(const PortableVertexDeclaration& vtx_decl)
 {
   return std::make_unique<NativeVertexFormat>(vtx_decl);
 }
+
+void SWRenderer::BindBackbuffer(const ClearColor& clear_color)
+{
+  CheckForSurfaceChange();
+  CheckForSurfaceResize();
+}
+
+void SWRenderer::CheckForSurfaceChange()
+{
+  if (!m_surface_changed.TestAndClear())
+    return;
+
+  m_window->GetContext()->UpdateSurface(m_new_surface_handle);
+  m_new_surface_handle = nullptr;
+
+  // With a surface change, the window likely has new dimensions.
+  m_backbuffer_width = m_window->GetContext()->GetBackBufferWidth();
+  m_backbuffer_height = m_window->GetContext()->GetBackBufferHeight();
+}
+
+void SWRenderer::CheckForSurfaceResize()
+{
+  if (!m_surface_resized.Fetch(m_wayland_width, m_wayland_height))
+    return;
+
+  m_window->GetContext()->Update();
+  m_backbuffer_width = m_window->GetContext()->GetBackBufferWidth();
+  m_backbuffer_height = m_window->GetContext()->GetBackBufferHeight();
+}
 }  // namespace SW

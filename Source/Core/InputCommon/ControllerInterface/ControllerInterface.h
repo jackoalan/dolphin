@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 
+#include "Common/AtomicInt2D.h"
 #include "Common/Matrix.h"
 #include "Common/WindowSystemInfo.h"
 #include "InputCommon/ControllerInterface/Device.h"
@@ -20,6 +21,9 @@
 #endif
 #if defined(HAVE_X11) && HAVE_X11
 #define CIFACE_USE_XLIB
+#endif
+#if defined(HAVE_WAYLAND) && HAVE_WAYLAND
+#define CIFACE_USE_WAYLAND
 #endif
 #if defined(__APPLE__)
 #define CIFACE_USE_OSX
@@ -61,6 +65,10 @@ public:
   // Inputs based on window coordinates should be multiplied by this.
   Common::Vec2 GetWindowInputScale() const;
 
+  // Update window size for input implementations that cannot access it via the WSI (Wayland).
+  void SetWindowSize(int new_width, int new_height);
+  bool FetchWindowSize(int& width_out, int& height_out);
+
   HotplugCallbackHandle RegisterDevicesChangedCallback(std::function<void(void)> callback);
   void UnregisterDevicesChangedCallback(const HotplugCallbackHandle& handle);
   void InvokeDevicesChangedCallbacks() const;
@@ -72,6 +80,7 @@ private:
   std::atomic<bool> m_is_populating_devices{false};
   WindowSystemInfo m_wsi;
   std::atomic<float> m_aspect_ratio_adjustment = 1;
+  Common::AtomicInt2D m_window_size;
 };
 
 extern ControllerInterface g_controller_interface;

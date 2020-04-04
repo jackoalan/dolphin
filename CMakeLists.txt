@@ -448,6 +448,19 @@ if(ENABLE_X11)
   endif()
 endif()
 
+# A trivial NoGUI Wayland application is not easy to create, but Qt has
+# good Wayland support built-in. This enables the Vulkan video backend
+# to create a Wayland swapchain using the native display and surface
+# managed by Qt.
+if(UNIX AND NOT APPLE AND NOT ANDROID AND ENABLE_QT)
+  pkg_check_modules(WAYLAND IMPORTED_TARGET wayland-client wayland-egl xkbcommon)
+  if(WAYLAND_FOUND)
+    add_definitions(-DHAVE_WAYLAND=1)
+    set(WAYLAND_LIBRARIES PkgConfig::WAYLAND)
+    message(STATUS "Wayland support enabled for DolphinQt")
+  endif()
+endif()
+
 if(ENABLE_EGL)
   find_package(EGL)
   if(EGL_FOUND)

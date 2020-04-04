@@ -1108,7 +1108,7 @@ void Renderer::CheckForSurfaceChange()
 
 void Renderer::CheckForSurfaceResize()
 {
-  if (!m_surface_resized.TestAndClear())
+  if (!m_surface_resized.Fetch(m_wayland_width, m_wayland_height))
     return;
 
   m_main_gl_context->Update();

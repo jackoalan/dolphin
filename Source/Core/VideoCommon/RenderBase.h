@@ -23,6 +23,7 @@
 #include <tuple>
 #include <vector>
 
+#include "Common/AtomicInt2D.h"
 #include "Common/CommonTypes.h"
 #include "Common/Event.h"
 #include "Common/Flag.h"
@@ -32,6 +33,7 @@
 #include "VideoCommon/FPSCounter.h"
 #include "VideoCommon/FrameDump.h"
 #include "VideoCommon/RenderState.h"
+#include "VideoCommon/SurfaceChangeInterlock.h"
 #include "VideoCommon/TextureConfig.h"
 
 class AbstractFramebuffer;
@@ -140,6 +142,12 @@ public:
   int GetTargetWidth() const { return m_target_width; }
   int GetTargetHeight() const { return m_target_height; }
   // Display resolution
+  static bool FetchBootstrapWaylandSize(int& width_out, int& height_out)
+  {
+    return m_bootstrap_wayland_size.Fetch(width_out, height_out);
+  }
+  int GetWaylandWidth() const { return m_wayland_width; }
+  int GetWaylandHeight() const { return m_wayland_height; }
   int GetBackbufferWidth() const { return m_backbuffer_width; }
   int GetBackbufferHeight() const { return m_backbuffer_height; }
   float GetBackbufferScale() const { return m_backbuffer_scale; }
@@ -234,7 +242,12 @@ public:
   // Final surface changing
   // This is called when the surface is resized (WX) or the window changes (Android).
   void ChangeSurface(void* new_surface_handle);
-  void ResizeSurface();
+  // Three methods for statefully synchronizing a new surface with the renderer
+  void BlockHostForSurfaceDestroy(); // host thread
+  void UnblockRendererWithNewSurface(void* surface); // host thread
+  void* WaitForNewSurface(); // renderer thread
+  static void BootstrapWaylandSize(int width, int height);
+  void ResizeSurface(int new_width, int new_height);
   bool UseVertexDepthRange() const;
   void DoState(PointerWrap& p);
 
@@ -306,6 +319,13 @@ protected:
   int m_target_width = 1;
   int m_target_height = 1;
 
+  // Set by DolphinQt when window is first shown and before Renderer
+  // is instantiated. This allows the Wayland Vulkan swapchain to have
+  // dimensions available before the renderer is constructed.
+  static Common::AtomicInt2D m_bootstrap_wayland_size;
+  int m_wayland_width = 0;
+  int m_wayland_height = 0;
+
   // Backbuffer (window) size and render area
   int m_backbuffer_width = 0;
   int m_backbuffer_height = 0;
@@ -320,8 +340,9 @@ protected:
 
   void* m_new_surface_handle = nullptr;
   Common::Flag m_surface_changed;
-  Common::Flag m_surface_resized;
+  Common::AtomicInt2D m_surface_resized;
   std::mutex m_swap_mutex;
+  SurfaceChangeInterlock m_surface_change_interlock;
 
   // ImGui resources.
   std::unique_ptr<NativeVertexFormat> m_imgui_vertex_format;

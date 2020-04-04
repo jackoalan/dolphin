@@ -86,6 +86,8 @@
 
 std::unique_ptr<Renderer> g_renderer;
 
+Common::AtomicInt2D Renderer::m_bootstrap_wayland_size;
+
 static float AspectToWidescreen(float aspect)
 {
   return aspect * ((16.0f / 9.0f) / (4.0f / 3.0f));
@@ -94,7 +96,7 @@ static float AspectToWidescreen(float aspect)
 Renderer::Renderer(int backbuffer_width, int backbuffer_height, float backbuffer_scale,
                    AbstractTextureFormat backbuffer_format)
     : m_backbuffer_width(backbuffer_width), m_backbuffer_height(backbuffer_height),
-      m_backbuffer_scale(backbuffer_scale),
+      m_backbuffer_scale(backbuffer_scale), m_surface_resized(m_bootstrap_wayland_size),
       m_backbuffer_format(backbuffer_format), m_last_xfb_width{MAX_XFB_WIDTH}, m_last_xfb_height{
                                                                                    MAX_XFB_HEIGHT}
 {
@@ -625,10 +627,32 @@ void Renderer::ChangeSurface(void* new_surface_handle)
   m_surface_changed.Set();
 }
 
-void Renderer::ResizeSurface()
+void Renderer::BlockHostForSurfaceDestroy()
+{
+  m_new_surface_handle = nullptr;
+  m_surface_changed.Set();
+  m_surface_change_interlock.BlockHostForSurfaceDestroy();
+}
+
+void Renderer::UnblockRendererWithNewSurface(void* surface)
+{
+  m_surface_change_interlock.UnblockRendererWithNewSurface(surface);
+}
+
+void* Renderer::WaitForNewSurface()
+{
+  return m_surface_change_interlock.WaitForNewSurface();
+}
+
+void Renderer::BootstrapWaylandSize(int width, int height)
+{
+  m_bootstrap_wayland_size.Store(width, height);
+}
+
+void Renderer::ResizeSurface(int new_width, int new_height)
 {
   std::lock_guard<std::mutex> lock(m_swap_mutex);
-  m_surface_resized.Set();
+  m_surface_resized.Store(new_width, new_height);
 }
 
 void Renderer::SetViewportAndScissor(const MathUtil::Rectangle<int>& rect, float min_depth,
@@ -786,6 +810,9 @@ void Renderer::UpdateDrawRectangle()
   // Make ControllerInterface aware of the render window region actually being used
   // to adjust mouse cursor inputs.
   g_controller_interface.SetAspectRatioAdjustment(draw_aspect_ratio / (win_width / win_height));
+
+  // Also make ControllerInterface aware of window size.
+  g_controller_interface.SetWindowSize(m_backbuffer_width, m_backbuffer_height);
 
   float draw_width, draw_height, crop_width, crop_height;
   draw_width = crop_width = draw_aspect_ratio;

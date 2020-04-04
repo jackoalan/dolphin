@@ -24,6 +24,8 @@ public:
   bool GetRenderFullscreen();
 
   void SetRenderHandle(void* handle);
+  void BlockForSurfaceDestroy();
+  void UnblockWithNewSurface(void* surface);
   void SetRenderFocus(bool focus);
   void SetRenderFullscreen(bool fullscreen);
   void ResizeSurface(int new_width, int new_height);

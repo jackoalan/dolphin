@@ -11,6 +11,8 @@
 #include <optional>
 #include <string>
 
+#include "Common/WindowSystemInfo.h"
+
 class QProgressDialog;
 class QStackedWidget;
 class QString;
@@ -36,6 +38,7 @@ class MenuBar;
 class NetPlayDialog;
 class NetPlaySetupDialog;
 class RegisterWidget;
+class RenderParent;
 class RenderWidget;
 class SearchBar;
 class SettingsWindow;
@@ -193,14 +196,23 @@ private:
   std::unique_ptr<X11Utils::XRRConfiguration> m_xrr_config;
 #endif
 
+  enum class WindowRenderMode
+  {
+    Direct, // RenderWidget directly used as a window.
+    Parent, // RenderWidget wrapped in parent for window.
+    Main    // RenderWidget in main window.
+  };
+
+  WindowSystemType m_wsi_type;
   QProgressDialog* m_progress_dialog = nullptr;
   QStackedWidget* m_stack;
   ToolBar* m_tool_bar;
   MenuBar* m_menu_bar;
   SearchBar* m_search_bar;
   GameList* m_game_list;
+  RenderParent* m_render_parent = nullptr; // Wayland only
   RenderWidget* m_render_widget = nullptr;
-  bool m_rendering_to_main;
+  WindowRenderMode m_window_render_mode;
   bool m_stop_confirm_showing = false;
   bool m_stop_requested = false;
   bool m_exit_requested = false;

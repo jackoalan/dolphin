@@ -55,7 +55,12 @@ public:
                     const AbstractTexture* src_texture,
                     const MathUtil::Rectangle<int>& src_rect) override;
 
+  void BindBackbuffer(const ClearColor& clear_color = {}) override;
+
 private:
+  void CheckForSurfaceChange();
+  void CheckForSurfaceResize();
+
   std::unique_ptr<SWOGLWindow> m_window;
 };
 }  // namespace SW

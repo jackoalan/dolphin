@@ -32,7 +32,6 @@
 
 #include "Common/ScopeGuard.h"
 #include "Common/Version.h"
-#include "Common/WindowSystemInfo.h"
 
 #include "Core/Boot/Boot.h"
 #include "Core/BootManager.h"
@@ -191,7 +190,7 @@ static std::vector<std::string> StringListToStdVector(QStringList list)
 
 MainWindow::MainWindow(std::unique_ptr<BootParameters> boot_parameters,
                        const std::string& movie_path)
-    : QMainWindow(nullptr)
+    : QMainWindow(nullptr), m_wsi_type(GetWindowSystemType())
 {
   setWindowTitle(QString::fromStdString(Common::scm_rev_str));
   setWindowIcon(Resources::GetAppIcon());
@@ -269,6 +268,7 @@ MainWindow::~MainWindow()
   Settings::Instance().ResetNetPlayServer();
 
   delete m_render_widget;
+  delete m_render_parent;
   delete m_netplay_dialog;
 
   for (int i = 0; i < 4; i++)
@@ -367,7 +367,7 @@ void MainWindow::CreateComponents()
   m_tool_bar = new ToolBar(this);
   m_search_bar = new SearchBar(this);
   m_game_list = new GameList(this);
-  m_render_widget = new RenderWidget;
+  m_render_widget = new RenderWidget(m_wsi_type);
   m_stack = new QStackedWidget(this);
 
   for (int i = 0; i < 4; i++)
@@ -604,7 +604,7 @@ void MainWindow::ConnectGameList()
 
 void MainWindow::ConnectRenderWidget()
 {
-  m_rendering_to_main = false;
+  m_window_render_mode = WindowRenderMode::Direct;
   m_render_widget->hide();
   connect(m_render_widget, &RenderWidget::Closed, this, &MainWindow::ForceStop);
   connect(m_render_widget, &RenderWidget::FocusChanged, this, [this](bool focus) {
@@ -1006,10 +1006,22 @@ void MainWindow::ShowRenderWidget()
   SetFullScreenResolution(false);
   Host::GetInstance()->SetRenderFullscreen(false);
 
+  if (m_wsi_type == WindowSystemType::Wayland)
+  {
+    // If main window indicates that it has non-zero frame margins, client-side decorations are
+    // in use. Because the RenderWidget surface is not drawn by Qt, it needs to be wrapped in a
+    // parent widget for the decorations to appear.
+    if (!m_render_parent && windowHandle()->frameMargins() != QMargins())
+    {
+      m_render_parent = new RenderParent(m_render_widget);
+      m_render_parent->installEventFilter(this);
+    }
+  }
+
   if (Config::Get(Config::MAIN_RENDER_TO_MAIN))
   {
     // If we're rendering to main, add it to the stack and update our title when necessary.
-    m_rendering_to_main = true;
+    m_window_render_mode = WindowRenderMode::Main;
 
     m_stack->setCurrentIndex(m_stack->addWidget(m_render_widget));
     connect(Host::GetInstance(), &Host::RequestTitle, this, &MainWindow::setWindowTitle);
@@ -1018,10 +1030,23 @@ void MainWindow::ShowRenderWidget()
 
     Host::GetInstance()->SetRenderFocus(isActiveWindow());
   }
+  else if (m_render_parent)
+  {
+    // Use render parent for separate window on wayland.
+    m_window_render_mode = WindowRenderMode::Parent;
+
+    m_render_parent->setCurrentIndex(m_render_parent->addWidget(m_render_widget));
+    connect(Host::GetInstance(), &Host::RequestTitle, m_render_parent, &QWidget::setWindowTitle);
+    m_render_parent->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    m_render_parent->repaint();
+
+    m_render_parent->showNormal();
+    m_render_parent->restoreGeometry(m_render_widget_geometry);
+  }
   else
   {
     // Otherwise, just show it.
-    m_rendering_to_main = false;
+    m_window_render_mode = WindowRenderMode::Direct;
 
     m_render_widget->showNormal();
     m_render_widget->restoreGeometry(m_render_widget_geometry);
@@ -1030,16 +1055,23 @@ void MainWindow::ShowRenderWidget()
 
 void MainWindow::HideRenderWidget(bool reinit)
 {
-  if (m_rendering_to_main)
+  if (m_window_render_mode == WindowRenderMode::Main)
   {
     // Remove the widget from the stack and reparent it to nullptr, so that it can draw
     // itself in a new window if it wants. Disconnect the title updates.
     m_stack->removeWidget(m_render_widget);
     m_render_widget->setParent(nullptr);
-    m_rendering_to_main = false;
+    m_window_render_mode = WindowRenderMode::Direct;
     m_stack->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     disconnect(Host::GetInstance(), &Host::RequestTitle, this, &MainWindow::setWindowTitle);
     setWindowTitle(QString::fromStdString(Common::scm_rev_str));
+  }
+  else if (m_window_render_mode == WindowRenderMode::Parent)
+  {
+    m_render_parent->removeWidget(m_render_widget);
+    m_render_widget->setParent(nullptr);
+    m_window_render_mode = WindowRenderMode::Direct;
+    disconnect(Host::GetInstance(), &Host::RequestTitle, m_render_parent, &QWidget::setWindowTitle);
   }
 
   // The following code works around a driver bug that would lead to Dolphin crashing when changing
@@ -1053,7 +1085,7 @@ void MainWindow::HideRenderWidget(bool reinit)
     m_render_widget->removeEventFilter(this);
     m_render_widget->deleteLater();
 
-    m_render_widget = new RenderWidget;
+    m_render_widget = new RenderWidget(m_wsi_type);
 
     m_render_widget->installEventFilter(this);
     connect(m_render_widget, &RenderWidget::Closed, this, &MainWindow::ForceStop);
@@ -1061,6 +1093,14 @@ void MainWindow::HideRenderWidget(bool reinit)
       if (m_render_widget->isFullScreen())
         SetFullScreenResolution(focus);
     });
+
+    if (m_render_parent)
+    {
+      m_render_parent->removeEventFilter(this);
+      m_render_parent->deleteLater();
+      m_render_parent = new RenderParent(m_render_widget);
+      m_render_parent->installEventFilter(this);
+    }
 
     // The controller interface will still be registered to the old render widget, if the core
     // has booted. Therefore, we should re-bind it to the main window for now. When the core
@@ -1131,7 +1171,7 @@ void MainWindow::ShowGraphicsWindow()
   if (!m_graphics_window)
   {
 #if defined(HAVE_XRANDR) && HAVE_XRANDR
-    if (GetWindowSystemType() == WindowSystemType::X11)
+    if (m_wsi_type == WindowSystemType::X11)
     {
       m_xrr_config = std::make_unique<X11Utils::XRRConfiguration>(
           static_cast<Display*>(QGuiApplication::platformNativeInterface()->nativeResourceForWindow(
@@ -1407,7 +1447,7 @@ void MainWindow::NetPlayQuit()
 void MainWindow::EnableScreenSaver(bool enable)
 {
 #if defined(HAVE_XRANDR) && HAVE_XRANDR
-  if (GetWindowSystemType() == WindowSystemType::X11)
+  if (m_wsi_type == WindowSystemType::X11)
     UICommon::EnableScreenSaver(winId(), enable);
 #else
   UICommon::EnableScreenSaver(enable);

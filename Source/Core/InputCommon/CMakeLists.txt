@@ -129,6 +129,14 @@ elseif(ANDROID)
   )
 endif()
 
+if(WAYLAND_FOUND)
+  target_sources(inputcommon PRIVATE
+    ControllerInterface/Wayland/Wayland.cpp
+    ControllerInterface/Wayland/Wayland.h
+  )
+  target_link_libraries(inputcommon PUBLIC ${WAYLAND_LIBRARIES})
+endif()
+
 if(ANDROID)
   target_sources(inputcommon PRIVATE GCAdapter_Android.cpp)
 else()

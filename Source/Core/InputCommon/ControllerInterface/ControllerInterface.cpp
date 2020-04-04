@@ -15,6 +15,9 @@
 #ifdef CIFACE_USE_XLIB
 #include "InputCommon/ControllerInterface/Xlib/XInput2.h"
 #endif
+#ifdef CIFACE_USE_WAYLAND
+#include "InputCommon/ControllerInterface/Wayland/Wayland.h"
+#endif
 #ifdef CIFACE_USE_OSX
 #include "InputCommon/ControllerInterface/OSX/OSX.h"
 #include "InputCommon/ControllerInterface/Quartz/Quartz.h"
@@ -54,6 +57,10 @@ void ControllerInterface::Initialize(const WindowSystemInfo& wsi)
 #endif
 #ifdef CIFACE_USE_XLIB
 // nothing needed
+#endif
+#ifdef CIFACE_USE_WAYLAND
+  if (m_wsi.type == WindowSystemType::Wayland)
+    ciface::Wayland::Init(m_wsi.display_connection);
 #endif
 #ifdef CIFACE_USE_OSX
   if (m_wsi.type == WindowSystemType::MacOS)
@@ -110,6 +117,10 @@ void ControllerInterface::RefreshDevices()
 #ifdef CIFACE_USE_XLIB
   if (m_wsi.type == WindowSystemType::X11)
     ciface::XInput2::PopulateDevices(m_wsi.render_surface);
+#endif
+#ifdef CIFACE_USE_WAYLAND
+  if (m_wsi.type == WindowSystemType::Wayland)
+    ciface::Wayland::PopulateDevices(m_wsi.render_window);
 #endif
 #ifdef CIFACE_USE_OSX
   if (m_wsi.type == WindowSystemType::MacOS)
@@ -171,6 +182,10 @@ void ControllerInterface::Shutdown()
 #endif
 #ifdef CIFACE_USE_XLIB
 // nothing needed
+#endif
+#ifdef CIFACE_USE_WAYLAND
+  if (m_wsi.type == WindowSystemType::Wayland)
+    ciface::Wayland::DeInit();
 #endif
 #ifdef CIFACE_USE_OSX
   ciface::OSX::DeInit();
@@ -274,6 +289,16 @@ Common::Vec2 ControllerInterface::GetWindowInputScale() const
     return {1.f, ar};
   else
     return {1 / ar, 1.f};
+}
+
+void ControllerInterface::SetWindowSize(int new_width, int new_height)
+{
+  m_window_size.Store(new_width, new_height);
+}
+
+bool ControllerInterface::FetchWindowSize(int& width_out, int& height_out)
+{
+  return m_window_size.Fetch(width_out, height_out);
 }
 
 // Register a callback to be called when a device is added or removed (as from the input backends'
