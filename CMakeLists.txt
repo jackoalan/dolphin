@@ -19,7 +19,9 @@ set(DISTRIBUTOR "None" CACHE STRING "Name of the distributor.")
 
 if(UNIX AND NOT APPLE AND NOT ANDROID)
   option(ENABLE_X11 "Enables X11 Support" ON)
-	option(ENABLE_WAYLAND "Enables Wayland Support" OFF)
+  option(ENABLE_WAYLAND "Enables Wayland Support" OFF)
+  cmake_dependent_option(ENABLE_WAYLAND_NOGUI "Enables Wayland Support in dolphin-emu-nogui" ON
+                         ENABLE_WAYLAND OFF)
 endif()
 if(NOT WIN32 AND NOT APPLE)
   option(ENABLE_EGL "Enables EGL OpenGL Interface" ON)
@@ -114,8 +116,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Binaries)
 if (WIN32)
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/Binary)
 
-	if (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-	  string(APPEND CMAKE_RUNTIME_OUTPUT_DIRECTORY /ARM64)
+  if (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+    string(APPEND CMAKE_RUNTIME_OUTPUT_DIRECTORY /ARM64)
   endif()
 
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
@@ -449,14 +451,21 @@ if(ENABLE_X11)
   endif()
 endif()
 
+
 if(ENABLE_WAYLAND)
-	find_package(Wayland)
-	if(WAYLAND_FOUND)
-		add_definitions(-DHAVE_WAYLAND=1)
-		message(STATUS "Wayland support enabled")
+  find_package(Wayland)
+  if(WAYLAND_FOUND)
+    add_definitions(-DHAVE_WAYLAND=1)
+    message(STATUS "Wayland support enabled")
   else()
-		message(WARNING "Wayland support enabled but not found. This build will not support Wayland.")
+    message(WARNING "Wayland support enabled but not found. This build will not support Wayland.")
   endif()
+endif()
+
+if(ENABLE_WAYLAND_NOGUI AND WAYLAND_FOUND)
+  find_package(XKBCommon)
+  find_package(WaylandScanner)
+  find_package(WaylandProtocols)
 endif()
 
 
