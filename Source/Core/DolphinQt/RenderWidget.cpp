@@ -20,6 +20,10 @@
 #include <QTimer>
 #include <QWindow>
 
+#ifndef WIN32
+#include <qpa/qplatformnativeinterface.h>
+#endif
+
 #include "imgui.h"
 
 #include "Core/Config/MainSettings.h"
@@ -36,7 +40,8 @@
 #include "VideoCommon/VertexShaderManager.h"
 #include "VideoCommon/VideoConfig.h"
 
-RenderWidget::RenderWidget(QWidget* parent) : QWidget(parent)
+RenderWidget::RenderWidget(WindowSystemType wsi_type, QWidget* parent)
+    : QWidget(parent), m_wsi_type(wsi_type)
 {
   setWindowTitle(QStringLiteral("Dolphin"));
   setWindowIcon(Resources::GetAppIcon());
@@ -67,6 +72,10 @@ RenderWidget::RenderWidget(QWidget* parent) : QWidget(parent)
   connect(this, &RenderWidget::StateChanged, Host::GetInstance(), &Host::SetRenderFullscreen,
           Qt::DirectConnection);
   connect(this, &RenderWidget::HandleChanged, Host::GetInstance(), &Host::SetRenderHandle,
+          Qt::DirectConnection);
+  connect(this, &RenderWidget::SurfaceAboutToBeDestroyed, Host::GetInstance(),
+          &Host::BlockForSurfaceDestroy, Qt::DirectConnection);
+  connect(this, &RenderWidget::SurfaceCreated, Host::GetInstance(), &Host::UnblockWithNewSurface,
           Qt::DirectConnection);
   connect(this, &RenderWidget::SizeChanged, Host::GetInstance(), &Host::ResizeSurface,
           Qt::DirectConnection);
@@ -192,7 +201,35 @@ bool RenderWidget::event(QEvent* event)
     }
     break;
   case QEvent::WinIdChange:
-    emit HandleChanged(reinterpret_cast<void*>(winId()));
+    if (m_wsi_type != WindowSystemType::Wayland)
+        emit HandleChanged(reinterpret_cast<void*>(winId()));
+    break;
+  case QEvent::PlatformSurface:
+    // On Wayland, the winId is irrelevant for rebinding the renderer surface.
+    // The PlatformSurfaceEvent provides a means to synchronously handle wl_surface creations and
+    // destroys.
+    if (m_wsi_type == WindowSystemType::Wayland)
+    {
+      auto* surface_event = static_cast<QPlatformSurfaceEvent*>(event);
+      switch (surface_event->surfaceEventType())
+      {
+      case QPlatformSurfaceEvent::SurfaceCreated:
+        // The actual surface creation handler must occur within its own event invocation to avoid
+        // wayland-egl deadlocks.
+        QGuiApplication::postEvent(this, new QEvent(QEvent::User));
+        break;
+      case QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed:
+        emit SurfaceAboutToBeDestroyed();
+        break;
+      default:
+        break;
+      }
+    }
+    break;
+  case QEvent::User:
+    // Followup from QPlatformSurfaceEvent::SurfaceCreated
+    emit SurfaceCreated(QGuiApplication::platformNativeInterface()->nativeResourceForWindow(
+        "surface", windowHandle()));
     break;
   case QEvent::WindowActivate:
     if (SConfig::GetInstance().m_PauseOnFocusLost && Core::GetState() == Core::State::Paused)

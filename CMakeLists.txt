@@ -20,6 +20,7 @@ set(DISTRIBUTOR "None" CACHE STRING "Name of the distributor.")
 if(UNIX AND NOT APPLE AND NOT ANDROID)
   option(ENABLE_X11 "Enables X11 Support" ON)
   option(ENABLE_WAYLAND "Enables Wayland Support" OFF)
+  include(CMakeDependentOption)
   cmake_dependent_option(ENABLE_WAYLAND_NOGUI "Enables Wayland Support in dolphin-emu-nogui" ON
                          ENABLE_WAYLAND OFF)
 endif()

@@ -129,6 +129,12 @@ elseif(ANDROID)
   )
 endif()
 
+if(ENABLE_WAYLAND AND WAYLAND_FOUND)
+  target_link_libraries(inputcommon PUBLIC
+    ${XKBCOMMON_LIBRARIES}
+  )
+endif()
+
 if(ANDROID)
   target_sources(inputcommon PRIVATE GCAdapter_Android.cpp)
 else()

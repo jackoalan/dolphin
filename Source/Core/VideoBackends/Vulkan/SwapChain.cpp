@@ -570,6 +570,11 @@ bool SwapChain::RecreateSurface(void* native_handle)
   DestroySwapChain();
   DestroySurface();
 
+  // If passed handle is null (Wayland), use the interlock to mutually synchronize host and
+  // renderer.
+  if (native_handle == nullptr)
+    native_handle = g_renderer->WaitForNewSurface();
+
   // Re-create the surface with the new native handle
   m_wsi.render_surface = native_handle;
   m_surface = CreateVulkanSurface(g_vulkan_context->GetVulkanInstance(), m_wsi);

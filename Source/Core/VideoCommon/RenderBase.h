@@ -32,6 +32,7 @@
 #include "VideoCommon/FPSCounter.h"
 #include "VideoCommon/FrameDump.h"
 #include "VideoCommon/RenderState.h"
+#include "VideoCommon/SurfaceChangeInterlock.h"
 #include "VideoCommon/TextureConfig.h"
 
 class AbstractFramebuffer;
@@ -143,6 +144,8 @@ public:
   int GetBackbufferWidth() const { return m_backbuffer_width; }
   int GetBackbufferHeight() const { return m_backbuffer_height; }
   float GetBackbufferScale() const { return m_backbuffer_scale; }
+  int GetNewWidth() const { return m_new_width; }
+  int GetNewHeight() const { return m_new_height; }
   void SetWindowSize(int width, int height);
 
   // Sets viewport and scissor to the specified rectangle. rect is assumed to be in framebuffer
@@ -234,6 +237,10 @@ public:
   // Final surface changing
   // This is called when the surface is resized (WX) or the window changes (Android).
   void ChangeSurface(void* new_surface_handle);
+  // Three methods for statefully synchronizing a new surface with the renderer (Wayland).
+  void BlockHostForSurfaceDestroy(); // host thread
+  void UnblockRendererWithNewSurface(void* surface); // host thread
+  void* WaitForNewSurface(); // renderer thread
   void ResizeSurface(int width, int height);
   void ResizeSurface() { ResizeSurface(-1, -1); }
   bool UseVertexDepthRange() const;
@@ -323,6 +330,7 @@ protected:
   Common::Flag m_surface_changed;
   Common::Flag m_surface_resized;
   std::mutex m_swap_mutex;
+  SurfaceChangeInterlock m_surface_change_interlock;
 
   // ImGui resources.
   std::unique_ptr<NativeVertexFormat> m_imgui_vertex_format;

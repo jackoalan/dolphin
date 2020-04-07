@@ -128,8 +128,6 @@ private:
   struct xkb_keymap* m_xkb_map = nullptr;
   struct xkb_state* m_xkb_state = nullptr;
 
-  int32_t m_window_x = Config::Get(Config::MAIN_RENDER_WINDOW_XPOS);
-  int32_t m_window_y = Config::Get(Config::MAIN_RENDER_WINDOW_YPOS);
   int32_t m_window_width = Config::Get(Config::MAIN_RENDER_WINDOW_WIDTH);
   int32_t m_window_height = Config::Get(Config::MAIN_RENDER_WINDOW_HEIGHT);
   int32_t m_scaling_factor = 1;
@@ -333,8 +331,8 @@ void PlatformWayland::xdg_toplevel_handle_configure(void* data, struct xdg_tople
   }
   else
   {
-    xdg_surface_set_window_geometry(platform->m_xdg_surface, platform->m_window_x,
-                                    platform->m_window_y, platform->m_window_width,
+    xdg_surface_set_window_geometry(platform->m_xdg_surface, 0,
+                                    0, platform->m_window_width,
                                     platform->m_window_height);
     wl_surface_commit(platform->m_surface);
   }
